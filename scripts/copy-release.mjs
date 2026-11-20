@@ -33,10 +33,10 @@ const portable = join(root, 'src-tauri', 'target', 'release', 'app.exe');
 const results = [];
 
 if (installer && existsSync(installer)) {
-  const dest = join(releaseDir, `DesktopTaskManager-v${version}-setup.exe`);
+  const dest = join(releaseDir, `HiTask-v${version}-setup.exe`);
   try {
     copyFileSync(installer, dest);
-    results.push(`安装包  -> DesktopTaskManager-v${version}-setup.exe`);
+    results.push(`安装包  -> HiTask-v${version}-setup.exe`);
   } catch (e) {
     results.push(`安装包  -> 复制失败：${e.message}`);
   }
@@ -45,10 +45,10 @@ if (installer && existsSync(installer)) {
 }
 
 if (existsSync(portable)) {
-  const dest = join(releaseDir, `DesktopTaskManager-v${version}.exe`);
+  const dest = join(releaseDir, `HiTask-v${version}.exe`);
   try {
     copyFileSync(portable, dest);
-    results.push(`便携版  -> DesktopTaskManager-v${version}.exe`);
+    results.push(`便携版  -> HiTask-v${version}.exe`);
   } catch (e) {
     results.push(`便携版  -> 复制失败（可能被运行中的进程锁定）：${e.message}`);
   }

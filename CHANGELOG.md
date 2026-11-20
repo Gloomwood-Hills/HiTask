@@ -24,6 +24,6 @@ V2.0.0 聚焦于跨端体验统一、任务视图重构与 Android 小部件稳�
 
 ### 发布文件
 
-- `DesktopTaskManager-v2.0.0.exe`
-- `DesktopTaskManager-v2.0.0-setup.exe`
-- `DesktopTaskManager-arm64-release.apk`
+- `HiTask-v2.0.0.exe`
+- `HiTask-v2.0.0-setup.exe`
+- `HiTask-arm64-release.apk`

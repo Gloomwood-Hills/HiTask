@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { FolderNode, Priority, TaskRepeatRule } from '../data/types';
 import { GeneratedSubtask, SubtaskPlanMode } from '../services/aiClient';
-import { parseNaturalDateTime, formatDeadline, applyDefaultDeadlineTime, formatCompletedAt } from './utils/formatDate';
+import { parseNaturalDateTime, stripNaturalDateTime, formatDeadline, applyDefaultDeadlineTime, formatCompletedAt } from './utils/formatDate';
 import { ReminderOffsetKey, REMINDER_OFFSET_OPTIONS, sanitizeOffsets } from '../data/reminderOffsets';
 import { containerTransform } from './utils/motion';
 import { glassSurface, glassBlur } from './utils/glass';
@@ -28,9 +28,6 @@ interface QuickCaptureProps {
   initialDate?: number;
   /** 预选的默认文件夹（如右键文件夹 → 新建任务）；null/不传时默认未分类 */
   initialFolderId?: string | null;
-  /** 截止时间仅填日期时默认补上的时/分（设置 → 默认截止时刻） */
-  defaultDeadlineHour?: number;
-  defaultDeadlineMinute?: number;
   /** 已配置 AI（设置 → AI）：启用「一键生成子任务」按钮 */
   aiEnabled?: boolean;
   /** 一键生成子任务回调（App 注入，读取 AI 配置调用 aiClient）；opts 携带个数/补充要求 */
@@ -137,6 +134,8 @@ export function ReminderCalendar({
       <div className="cal-time-row">
         <input
           type="time"
+          lang="en-GB"
+          inputMode="numeric"
           value={toTimeValue(hour, minute)}
           onChange={(e) => {
             const [h, m] = e.target.value.split(':').map((n) => Number(n));
@@ -154,22 +153,6 @@ const calNavStyle: React.CSSProperties = {
   width: 20, height: 20, border: 'none', background: 'transparent', color: 'var(--muted-foreground)',
   cursor: 'pointer', borderRadius: 6, fontSize: 14, lineHeight: 1, padding: 0,
 };
-
-/** 由标题片段提取纯任务名：去除日期/时间段/时辰等自然语言修饰，仅保留命名主体（如"九月九日登山"→"登山"） */
-function cleanPlusTitle(s: string): string {
-  let t = s;
-  // 具体日期：x月x日/x月x号（中文数字或阿拉伯数字）
-  t = t.replace(/[0-9一二两三四五六七八九十]{1,2}\s*月\s*[0-9一二两三四五六七八九十]{1,2}\s*(?:日|号|天)?/g, '');
-  t = t.replace(/\d{4}\s*年/g, '');
-  // 相对日期
-  t = t.replace(/今天|今日|明天|明日|后天|大后天|月底/g, '');
-  t = t.replace(/(?:下个?周|周|星期|礼拜)\s*[一二三四五六日天]/g, '');
-  // 时间段 / 时辰
-  t = t.replace(/早晨|清晨|早上|上午|下午|晚上|傍晚|凌晨|中午|晚间|夜晚/g, '');
-  t = t.replace(/[点时:：]/g, '');
-  t = t.replace(/的/g, '');
-  return t.trim();
-}
 
 /** 解析"任务+属性"串联输入（+ 分隔）：提取重复规则、提前提醒偏移，并净化出任务标题。
  * 无 "+" 时返回 null（保持原有输入即标题的行为）。 */
@@ -189,8 +172,17 @@ function parsePlusProperties(text: string): {
     if (/每周|每星期|每礼拜/.test(seg)) { repeatRule = 'weekly'; continue; }
     if (/每月|每个月/.test(seg)) { repeatRule = 'monthly'; continue; }
     if (/每年|每一年/.test(seg)) { repeatRule = 'yearly'; continue; }
-    const cm = seg.match(/每(?:隔)?\s*(\d+)\s*天/);
-    if (cm) { repeatRule = 'custom'; repeatIntervalDays = Math.max(1, parseInt(cm[1], 10)); continue; }
+    const cm = seg.match(/每(?:隔)?\s*(\d+|[一二两三四五六七八九十]{1,3})\s*天/);
+    if (cm) {
+      const cn: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+      const token = cm[1];
+      const n = /^\d+$/.test(token) ? parseInt(token, 10) : (token.length === 2 && token.startsWith('十')
+        ? 10 + (cn[token[1]] ?? 0)
+        : token.length === 2 && token.endsWith('十') ? (cn[token[0]] ?? 0) * 10
+          : token.length === 3 && token[1] === '十' ? (cn[token[0]] ?? 0) * 10 + (cn[token[2]] ?? 0)
+            : (cn[token] ?? 0));
+      repeatRule = 'custom'; repeatIntervalDays = Math.max(1, n); continue;
+    }
     // 提前提醒偏移
     if (/提前|提醒|当天/.test(seg) && /(?:天|小时|当天)/.test(seg)) {
       const o: string[] = [];
@@ -202,7 +194,7 @@ function parsePlusProperties(text: string): {
     }
     kept.push(seg);
   }
-  const cleanTitle = cleanPlusTitle(kept.join(' '));
+  const cleanTitle = stripNaturalDateTime(kept.join(' '));
   return { cleanTitle: cleanTitle || text.trim(), repeatRule, repeatIntervalDays, reminderOffsets };
 }
 
@@ -343,7 +335,11 @@ function DualCalendar({
 }
 
 /** 新建任务弹窗（Quick Capture，对齐设计稿 side-0 quick-capture / modeTime 三列布局） */
-export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirmed, timeConfirmationNeeded = false, initialDate, initialFolderId = null, defaultDeadlineHour = 18, defaultDeadlineMinute = 0, aiEnabled = false, onGenerateSubtasks, parentContext, initialTitle, initialDeadline, initialPriority, initialRemark, initialRepeatRule, initialRepeatIntervalDays, initialReminderOffsets, initialReminderTimes, initialSubtasks }: QuickCaptureProps) {
+export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirmed, timeConfirmationNeeded = false, initialDate, initialFolderId = null, aiEnabled = false, onGenerateSubtasks, parentContext, initialTitle, initialDeadline, initialPriority, initialRemark, initialRepeatRule, initialRepeatIntervalDays, initialReminderOffsets, initialReminderTimes, initialSubtasks }: QuickCaptureProps) {
+  const createdAt = useRef(Date.now()).current;
+  const createdAtDate = new Date(createdAt);
+  const defaultDeadlineHour = createdAtDate.getHours();
+  const defaultDeadlineMinute = createdAtDate.getMinutes();
   const [title, setTitle] = useState(initialTitle ?? '');
   const [remark, setRemark] = useState(initialRemark ?? '');
   const [folderId, setFolderId] = useState<string | null>(initialFolderId);
@@ -357,7 +353,10 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
   /** 多选提醒时刻（绝对毫秒时间戳）：日历右键可设置任意多个，每个时刻对应一个独立气泡分别设置 */
   const [reminderTimes, setReminderTimes] = useState<number[]>(initialReminderTimes ?? []);
   /** 时刻气泡：左键设置截止后浮现，供填写具体截止时刻 */
-  const [deadlineEditOpen, setDeadlineEditOpen] = useState(false);
+  const [deadlineEditOpen, setDeadlineEditOpen] = useState(initialDeadline != null);
+  /** 自然语言截止时间气泡被用户关闭后，在标题再次变化前不重复弹出。 */
+  const [naturalDeadlineDismissed, setNaturalDeadlineDismissed] = useState(false);
+  const [naturalDeadlineCancelled, setNaturalDeadlineCancelled] = useState(false);
   const [repeatRule, setRepeatRule] = useState<TaskRepeatRule | null>(initialRepeatRule ?? null);
   const [repeatIntervalDays, setRepeatIntervalDays] = useState<number | null>(initialRepeatIntervalDays ?? null);
   const [important, setImportant] = useState(initialPriority === 'important');
@@ -391,9 +390,13 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
 
   // 自然语言日期解析（实时，标题变化即更新），仅日期时按默认截止时刻补全
   const parsedDeadline = useMemo(
-    () => applyDefaultDeadlineTime(parseNaturalDateTime(title), defaultDeadlineHour, defaultDeadlineMinute),
-    [title, defaultDeadlineHour, defaultDeadlineMinute]
+    () => naturalDeadlineCancelled ? null : applyDefaultDeadlineTime(parseNaturalDateTime(title), defaultDeadlineHour, defaultDeadlineMinute),
+    [title, defaultDeadlineHour, defaultDeadlineMinute, naturalDeadlineCancelled]
   );
+  useEffect(() => {
+    setNaturalDeadlineDismissed(false);
+    setNaturalDeadlineCancelled(false);
+  }, [title]);
   // 手动选择优先，其次标题解析；手动选择日期快捷项时同样补默认时刻
   const effectiveDeadline = manualDeadline !== null
     ? applyDefaultDeadlineTime(manualDeadline, defaultDeadlineHour, defaultDeadlineMinute)
@@ -465,8 +468,9 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
   /** 截止时刻气泡变更（仅改时分，日期保留） */
   const handleDeadlineTimeChange = (v: string) => {
     const [h, m] = v.split(':').map((n) => Number(n));
-    if (manualDeadline == null || Number.isNaN(h) || Number.isNaN(m)) return;
-    const d = new Date(manualDeadline);
+    const baseDeadline = manualDeadline ?? parsedDeadline;
+    if (baseDeadline == null || Number.isNaN(h) || Number.isNaN(m)) return;
+    const d = new Date(baseDeadline);
     d.setHours(h, m, 0, 0);
     setManualDeadline(d.getTime());
   };
@@ -495,10 +499,10 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
     return toTimeValue(d.getHours(), d.getMinutes());
   };
 
-  /** 净化后的纯任务标题（"+"串联输入时去除日期/重复/提醒修饰） */
+  /** 日期片段只用于截止时间，不作为任务标题保存。 */
   const resolvedTitle = useMemo(
-    () => (plusProps ? (plusProps.cleanTitle || title.trim()) : title.trim()),
-    [plusProps, title],
+    () => naturalDeadlineCancelled ? title.trim() : stripNaturalDateTime(plusProps ? plusProps.cleanTitle : title),
+    [naturalDeadlineCancelled, plusProps, title],
   );
 
   /** AI 规划：结果先放入建议区，用户确认后才新增/替换，支持依据现有子任务迭代。 */
@@ -566,7 +570,7 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
   };
 
   const handleCreate = async () => {
-    if (!title.trim()) return;
+    if (!resolvedTitle) return;
     // 强约束：子任务时间必须在 [新建时间, 父任务截止] 之间
     for (const s of subtasks) {
       if (s.deadline != null && isSubtaskTimeOutOfRange(s.deadline)) {
@@ -586,8 +590,8 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
       remark: remark.trim(),
       reminderOffsets: customTimes ? [] : (hasDeadline ? offsetList : []),
       reminderTimes: customTimes ? reminderTimes : [],
-      repeatRule: effectiveDeadline ? repeatRule : null,
-      repeatIntervalDays: effectiveDeadline && repeatRule === 'custom' ? repeatIntervalDays : null,
+      repeatRule,
+      repeatIntervalDays: repeatRule === 'custom' ? repeatIntervalDays : null,
       // 编辑模式下空数组表示用户明确移除了全部子任务；新建模式下同样安全地表示无子任务。
       subtasks,
     });
@@ -653,6 +657,12 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
                 autoFocus
               />
             </div>
+            {parsedDeadline !== null && (
+              <div className="qc-natural-preview" role="status" aria-live="polite">
+                <span>识别到截止时间</span>
+                <strong>{formatDeadline(parsedDeadline)}</strong>
+              </div>
+            )}
             <div className="qc-advanced">
             {/* 顶部选项行：文件夹 / 重要（提醒设置位于下方时间卡片，分类旁不再放提醒气泡） */}
             <div className="opt-row">
@@ -952,17 +962,19 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
                       );
                     })}
                   </div>
-                  {deadlineEditOpen && (
+                  {(deadlineEditOpen || (manualDeadline === null && parsedDeadline !== null && !naturalDeadlineDismissed)) && (
                     <div className="time-bubble" onClick={() => setDeadlineEditOpen(true)}>
                       <span className="dl-dot" />
                       <span className="tb-label">截止时刻</span>
                       <input
                         type="time"
-                        value={timeOf(manualDeadline)}
+                        lang="en-GB"
+                        inputMode="numeric"
+                        value={timeOf(manualDeadline ?? parsedDeadline)}
                         onChange={(e) => handleDeadlineTimeChange(e.target.value)}
                         aria-label="截止具体时刻"
                       />
-                      <button type="button" onClick={() => { setManualDeadline(null); setDeadlineEditOpen(false); }} aria-label="取消截止时刻"><X /></button>
+                      <button type="button" onClick={() => { setManualDeadline(null); setDeadlineEditOpen(false); setNaturalDeadlineDismissed(true); setNaturalDeadlineCancelled(true); }} aria-label="取消截止时刻"><X /></button>
                     </div>
                   )}
                 </div>
@@ -993,6 +1005,8 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
                       <span className="tb-label">{formatCompletedAt(rt)}</span>
                       <input
                         type="time"
+                        lang="en-GB"
+                        inputMode="numeric"
                         value={timeOf(rt)}
                         onChange={(e) => handleReminderTimeChange(i, e.target.value)}
                         aria-label={`第${i + 1}个提醒具体时刻`}
@@ -1031,7 +1045,7 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
               }}
             />
 
-            {/* 重复规则（需先有截止时间） */}
+            {/* 重复规则（无截止时间时以创建时刻为基准） */}
             <div className="qc-repeat-row" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>重复</span>
               <select
@@ -1067,19 +1081,10 @@ export default function QuickCapture({ folders, onClose, onCreate, onTimeConfirm
               )}
             </div>
 
-            {/* 解析日期预览（标题自然语言识别） */}
-            {hasDeadline && !manualDeadline && (
-              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  识别到: {formatDeadline(effectiveDeadline)}
-                </span>
-              </div>
-            )}
-
             </div>
             </div>
             <div className="qc-action-bar">
-              <button type="button" className="create-btn" disabled={!title.trim()} onClick={handleCreate} aria-label="创建任务">
+              <button type="button" className="create-btn" disabled={!resolvedTitle} onClick={handleCreate} aria-label="创建任务">
                 创建任务
               </button>
             </div>

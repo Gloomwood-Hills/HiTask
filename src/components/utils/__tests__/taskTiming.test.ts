@@ -4,6 +4,12 @@ import { deferredDeadline, shiftReminderTimes, timingConfirmation } from '../tas
 const at = (year: number, month: number, day: number, hour = 0, minute = 0) => new Date(year, month - 1, day, hour, minute).getTime();
 
 describe('task timing helpers', () => {
+  it('delays by three or seven hours across midnight', () => {
+    const now = new Date(2026, 8, 26, 22, 30);
+    expect(deferredDeadline('plus3Hours', now)).toBe(at(2026, 9, 27, 1, 30));
+    expect(deferredDeadline('plus7Hours', now)).toBe(at(2026, 9, 27, 5, 30));
+  });
+
   it('skips the weekend for the next workday', () => {
     const friday = new Date(2026, 8, 25, 10, 0);
     expect(deferredDeadline('nextWorkday', 18, 0, friday)).toBe(at(2026, 9, 28, 18));

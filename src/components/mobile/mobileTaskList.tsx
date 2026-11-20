@@ -153,7 +153,7 @@ function MobileTaskRow({ task, depth, expanded, expandedTasks, onToggleExpanded,
       >
         <button
           type="button"
-          className={`mobile-task-check ${task.completed ? 'is-complete' : ''} ${task.priority === 'important' ? 'is-important' : ''}`}
+          className={`mobile-task-check ${task.completed ? 'is-complete' : ''} ${task.priority === 'important' ? 'is-important' : ''} ${task.repeatSeriesId !== null ? 'is-repeated' : ''}`}
           aria-label={task.completed ? '恢复任务' : '完成任务'}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => { event.stopPropagation(); onToggleCompleted(); }}
@@ -242,6 +242,8 @@ export default function MobileTaskList({ folders, rootTasks, expandedTasks, onTo
     return () => document.removeEventListener('pointerdown', closeFromOutside, true);
   }, [activeSwipeTaskId]);
   const deferOptions: { target: DeferTarget; label: string }[] = [
+    { target: 'plus3Hours', label: '延后三小时' },
+    { target: 'plus7Hours', label: '延后七小时' },
     { target: 'tonight', label: '今晚' },
     { target: 'tomorrow', label: '明天' },
     { target: 'nextWorkday', label: '下个工作日' },

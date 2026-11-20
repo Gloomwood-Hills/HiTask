@@ -102,6 +102,23 @@ async function initDatabase(db: Database): Promise<void> {
   // 绝对毫秒时间戳；日历右键可设置任意多个绝对提醒点）
   await migrateTaskAddReminderTimes(db);
 
+  // 修复旧版编辑流程清空了默认截止提醒的任务；仅重新武装未来任务，避免启动时补弹大量历史通知。
+  await db.execute(
+    `UPDATE Task SET reminderAt = deadline
+     WHERE deadline > ? AND reminderAt IS NULL AND reminderFired = 0 AND completed = 0 AND deleted = 0
+       AND (reminderOffsets IS NULL OR reminderOffsets = '' OR reminderOffsets = '[]')
+       AND (reminderTimes IS NULL OR reminderTimes = '' OR reminderTimes = '[]')`,
+    [Date.now()]
+  );
+  // 旧版在最后一个自定义提醒后就将整项标记为完成，导致随后到来的截止提醒被跳过。
+  await db.execute(
+    `UPDATE Task SET reminderFired = 0
+     WHERE deadline > ? AND reminderFired = 1 AND completed = 0 AND deleted = 0
+       AND ((reminderOffsets IS NOT NULL AND reminderOffsets != '[]' AND reminderOffsets != '')
+         OR (reminderTimes IS NOT NULL AND reminderTimes != '[]' AND reminderTimes != ''))`,
+    [Date.now()]
+  );
+
   await db.execute(`
     CREATE TABLE IF NOT EXISTS Settings (
       id TEXT PRIMARY KEY,

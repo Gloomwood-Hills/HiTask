@@ -202,7 +202,9 @@ class TaskWidgetProvider : AppWidgetProvider() {
     }
 
     private fun updateWidget(context: Context, manager: AppWidgetManager, widgetId: Int) {
-      val views = RemoteViews(context.packageName, R.layout.task_widget)
+      val height = widgetHeight(context, manager, widgetId)
+      val compact = height < 280
+      val views = RemoteViews(context.packageName, if (compact) R.layout.task_widget_compact else R.layout.task_widget)
       views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_title))
 
       // 小部件外观：主题(背景+全部文字配色) + 毛玻璃/透明度(仅背景 alpha，不影响文字)
@@ -221,7 +223,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
         val important = task.priority == "important"
         (!overdue && !important) || (overdue && filter.showOverdue) || (important && filter.showImportant)
       }
-      val perPage = visibleSlots(context, manager, widgetId)
+      val perPage = slotsForHeight(height)
       val total = all.size
       val pageCount = if (total == 0) 1 else ((total + perPage - 1) / perPage)
       val off = scrollOffset(context, widgetId)
@@ -306,7 +308,7 @@ class TaskWidgetProvider : AppWidgetProvider() {
     }
 
     /** 优先使用 Android 12+ 启动器给出的精确尺寸；旧启动器回退到横/竖屏高度范围。 */
-    private fun visibleSlots(context: Context, manager: AppWidgetManager, widgetId: Int): Int {
+    private fun widgetHeight(context: Context, manager: AppWidgetManager, widgetId: Int): Int {
       val options = manager.getAppWidgetOptions(widgetId)
       val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
       val maxHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
@@ -321,11 +323,20 @@ class TaskWidgetProvider : AppWidgetProvider() {
       } else {
         minHeight.takeIf { it > 0 } ?: maxHeight.takeIf { it > 0 } ?: 180
       }
-      // 顶栏、输入筛选栏、翻页栏与内边距共预留约 130dp；任务条固定 48dp。
-      val slots = ((height - 130) / 48).coerceIn(1, SLOT_IDS.size)
-      Log.d(TAG, "widget=$widgetId exactHeight=$exactHeight minHeight=$minHeight maxHeight=$maxHeight portrait=$portrait rows=$slots")
-      return slots
+      Log.d(TAG, "widget=$widgetId exactHeight=$exactHeight minHeight=$minHeight maxHeight=$maxHeight portrait=$portrait height=$height")
+      return height
     }
+
+    // 紧凑模式保留标题栏、添加和翻页；拉长到足够高度后显示完整筛选栏。
+    // 预留翻页栏空间，即使任务数量变化也不会裁切末行。
+    internal fun slotsForHeight(height: Int): Int = if (height < 280) {
+      ((height - 56) / 24).coerceIn(1, 5)
+    } else {
+      ((height - 118) / 32).coerceIn(1, SLOT_IDS.size)
+    }
+
+    private fun visibleSlots(context: Context, manager: AppWidgetManager, widgetId: Int): Int =
+      slotsForHeight(widgetHeight(context, manager, widgetId))
 
     private fun refreshPending(context: Context, widgetId: Int): PendingIntent {
       val intent = Intent(context, TaskWidgetProvider::class.java).apply {
@@ -554,13 +565,28 @@ class TaskWidgetProvider : AppWidgetProvider() {
           }
         }
 
-        // 小部件与应用统一：只按截止时间排序，不展示父任务。
-        return sortCore(rows, "deadline")
+        // 小部件与应用统一按截止时间排序；开启“重要任务置顶”时，重要任务先分区。
+        val importantTop = readImportantTop(db)
+        val sorted = sortCore(rows, "deadline")
+        return if (importantTop) {
+          sorted.filter { it.priority == "important" } + sorted.filter { it.priority != "important" }
+        } else sorted
       } catch (e: Exception) {
         Log.e(TAG, "loadTasks failed: ${e.message}")
         return emptyList()
       } finally {
         db.close()
+      }
+    }
+
+    /** 读取桌面端设置中的重要任务置顶开关；旧库/字段缺失时按关闭处理。 */
+    private fun readImportantTop(db: SQLiteDatabase): Boolean {
+      return try {
+        db.rawQuery("SELECT importantTop FROM Settings LIMIT 1", null).use { c ->
+          c.moveToFirst() && c.getInt(0) != 0
+        }
+      } catch (_: Exception) {
+        false
       }
     }
 

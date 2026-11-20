@@ -19,7 +19,11 @@ interface WebdavFetchResultRaw {
   exists: boolean;
   lastModified: string | null;
   content: number[] | null;
+  etag?: string | null;
 }
+
+// 仅内存保存已下载正文。304 后继续参与记录合并，本地修改仍可上传。
+let remoteCache: { key: string; etag: string; result: WebdavFetchResult } | null = null;
 
 export interface WebdavPutResult {
   status: number;
@@ -127,20 +131,29 @@ export async function webdavFetch(
   settings: SyncSettings,
   remotePath: string
 ): Promise<WebdavFetchResult> {
+  const key = JSON.stringify([normalizeWebdavUrl(settings.webdavUrl), settings.webdavUsername, settings.webdavPassword, remotePath]);
+  const cached = remoteCache?.key === key ? remoteCache : null;
   const raw = await withRetry(`下载远端 ${remotePath}`, () =>
     invoke<WebdavFetchResultRaw>('webdav_fetch', {
       url: normalizeWebdavUrl(settings.webdavUrl),
       username: settings.webdavUsername,
       password: settings.webdavPassword,
       remotePath,
+      ifNoneMatch: cached?.etag ?? null,
     })
   );
-  return {
+  if (raw.status === 304) {
+    if (!cached) throw new Error('云端返回未修改，但本机没有快照缓存');
+    return cached.result;
+  }
+  const result = {
     status: raw.status,
     exists: raw.exists,
     lastModified: raw.lastModified,
     content: raw.content === null ? null : await decompressContent(new Uint8Array(raw.content)),
   };
+  remoteCache = raw.etag && result.content !== null ? { key, etag: raw.etag, result } : null;
+  return result;
 }
 
 /**
@@ -156,6 +169,7 @@ export async function webdavPut(
   content: string
 ): Promise<WebdavPutResult> {
   const bytes = await gzipText(content);
+  remoteCache = null;
   return withRetry(`上传远端 ${remotePath}`, () =>
     invoke<WebdavPutResult>('webdav_put', {
       url: normalizeWebdavUrl(settings.webdavUrl),

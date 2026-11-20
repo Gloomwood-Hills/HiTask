@@ -252,21 +252,23 @@ npm run tauri build    # cargo build --release，嵌入 dist
 npm run release        # 上述 + scripts/copy-release.mjs 归档便携版 exe
 ```
 
-便携版 exe 输出到 `release/DesktopTaskManager-v2.0.0.exe`，安装包为 `release/DesktopTaskManager-v2.0.0-setup.exe`。
+便携版 exe 输出到 `release/HiTask-v2.0.0.exe`，安装包为 `release/HiTask-v2.0.0-setup.exe`。
 
 ### Android
 
-```powershell
-# 环境变量
-$env:JAVA_HOME="D:\Android\jdk-21"
-$env:ANDROID_HOME="D:\Android"
-$env:NDK_HOME="D:\Android\ndk\<version>"
+在 Windows 上安装 JDK 21，以及 Android SDK Platform 36、Build-Tools 35.0.1、Platform-Tools 和 NDK 27.2.12479018。项目包含 Gradle Wrapper。按实际安装位置调整以下环境变量，并在项目根目录执行。
 
-cd src-tauri\gen\android
-.\gradlew.bat assembleRelease -PtargetList=aarch64 -ParchList=arm64 -PabiList=arm64-v8a
+```powershell
+$env:JAVA_HOME = 'D:\Android\jdk-21'
+$env:ANDROID_HOME = 'D:\Android'
+$env:NDK_HOME = Join-Path $env:ANDROID_HOME 'ndk\27.2.12479018'
+rustup target add aarch64-linux-android
+npm run tauri -- android build --debug --apk --target aarch64
 ```
 
-产物：`app/build/outputs/apk/arm64/release/app-arm64-release.apk`
+APK 位于 `src-tauri/gen/android/app/build/outputs/apk/`。生成 release 包时去掉 `--debug`。
+
+如需在现有安装上升级签名版 APK，需要原发布密钥。`src-tauri/gen/android/app/release.jks` 和 `src-tauri/gen/android/keystore.properties` 应保存在项目目录之外的安全备份中，发布时恢复到原位。调试 APK 可使用 Android 的调试签名。
 
 ### Android 交叉编译注意事项
 

@@ -74,12 +74,18 @@ const NAV_BUTTON: CSSProperties = {
   transition: 'background-color 0.15s ease',
 };
 
-/** 勾选圆圈样式：重要任务只通过橙色勾选框提示，不再显示额外标签。 */
-function circleStyle(completed: boolean, important = false): CSSProperties {
+/** 重复任务绿色优先，其次重要任务橙色。 */
+function circleStyle(completed: boolean, important = false, repeated = false): CSSProperties {
   if (completed) {
     return {
-      background: 'var(--primary)',
+      background: repeated ? '#2da04e' : 'var(--primary)',
       color: '#ffffff',
+    };
+  }
+  if (repeated) {
+    return {
+      border: '1.5px solid #2da04e',
+      background: 'color-mix(in srgb, #2da04e 10%, transparent)',
     };
   }
   if (important) {
@@ -120,7 +126,7 @@ function SubtaskRow({ task, onToggleComplete, onContextMenuTask }: {
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            ...circleStyle(completed, task.priority === 'important'),
+            ...circleStyle(completed, task.priority === 'important', task.repeatSeriesId !== null),
           }}
         >
           {completed && (
@@ -212,7 +218,7 @@ function TimelineEntry({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            ...circleStyle(completed, important),
+            ...circleStyle(completed, important, task.repeatSeriesId !== null),
             boxShadow: '0 1px 3px rgba(0, 0, 0, 0.16)',
             transition: 'transform 0.12s ease',
           }}

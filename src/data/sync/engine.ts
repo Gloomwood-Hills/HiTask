@@ -6,6 +6,7 @@ import { SyncSettings, SyncSnapshot, SYNC_SCHEMA_VERSION } from './types';
 import { SyncPolicy } from '../types';
 import { webdavFetch, webdavMkcol, webdavPut } from './webdavClient';
 import { logSync } from './syncLog';
+import { notifySyncDataApplied } from './dataEvents';
 
 /** 远端备份文件的相对路径：放在坚果云「Desktop-task-manager」子文件夹中，便于用户管理。
  * 该目录在上传前会自动创建（MKCOL），无需用户手动建文件夹。 */
@@ -86,6 +87,7 @@ export async function downloadRemote(settings: SyncSettings): Promise<SyncResult
   }
   const snapshot = parseSnapshot(result.content);
   await importSnapshot(snapshot);
+  notifySyncDataApplied();
   return { status: 'downloaded', message: '已从云端恢复数据到本地' };
 }
 
@@ -152,6 +154,7 @@ async function doSyncMerge(settings: SyncSettings, policy: SyncPolicy): Promise<
     // 本地有差异 → 合并结果写回本地（不清空，逐条 INSERT OR REPLACE 收敛；本机操作无网络流量）
     if (!localUnchanged) {
       await importMerged(folders, tasks);
+      notifySyncDataApplied();
     }
 
     // 云端有差异 → PUT 合并结果使远端收敛（ensureRemoteDir 先建目录规避 409）

@@ -13,6 +13,7 @@ pub struct WebdavFetchResult {
     pub status: u16,
     pub exists: bool,
     pub last_modified: Option<String>,
+    pub etag: Option<String>,
     pub content: Option<Vec<u8>>,
 }
 
@@ -52,12 +53,19 @@ pub async fn webdav_fetch(
     username: String,
     password: String,
     remote_path: String,
+    if_none_match: Option<String>,
 ) -> Result<WebdavFetchResult, String> {
     let target = join_path(&url, &remote_path);
 
-    let response = reqwest::Client::new()
+    let mut request = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build().map_err(|error| error.to_string())?
         .get(&target)
-        .basic_auth(&username, Some(&password))
+        .basic_auth(&username, Some(&password));
+    if let Some(tag) = if_none_match {
+        request = request.header(reqwest::header::IF_NONE_MATCH, tag);
+    }
+    let response = request
         .send()
         .await
         .map_err(|e| {
@@ -71,6 +79,11 @@ pub async fn webdav_fetch(
 
     let status = response.status();
     let status_code = status.as_u16();
+    let etag = response.headers().get(reqwest::header::ETAG)
+        .and_then(|value| value.to_str().ok()).map(str::to_owned);
+    if status_code == 304 {
+        return Ok(WebdavFetchResult { status: 304, exists: true, last_modified: None, etag, content: None });
+    }
 
     // 404 是正常分支而非错误：表示远端文件尚未存在（首次同步）。
     // 409 也按"不存在"处理：坚果云等 WebDAV 对父目录缺失的路径返回 409（而非 404）。
@@ -79,6 +92,7 @@ pub async fn webdav_fetch(
             status: status_code,
             exists: false,
             last_modified: None,
+            etag: None,
             content: None,
         });
     }
@@ -110,6 +124,7 @@ pub async fn webdav_fetch(
         status: status_code,
         exists: true,
         last_modified,
+        etag,
         content: Some(bytes.to_vec()),
     })
 }
@@ -128,7 +143,9 @@ pub async fn webdav_put(
 ) -> Result<WebdavPutResult, String> {
     let target = join_path(&url, &remote_path);
 
-    let response = reqwest::Client::new()
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build().map_err(|error| error.to_string())?
         .put(&target)
         .basic_auth(&username, Some(&password))
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -181,7 +198,9 @@ pub async fn webdav_mkcol(
     remote_path: String,
 ) -> Result<WebdavMkcolResult, String> {
     let target = join_path(&url, &remote_path);
-    let response = reqwest::Client::new()
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build().map_err(|error| error.to_string())?
         .request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &target)
         .basic_auth(&username, Some(&password))
         .send()

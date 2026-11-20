@@ -591,6 +591,48 @@ input.pw-mask {
 .mobile-command-field { min-width: 0; }
 .mobile-command-field > div { width: 100%; }
 .mobile-command-field input { width: 100% !important; height: 38px !important; border-radius: 12px !important; font-size: 13px !important; }
+.command-time-preview {
+  position: absolute; z-index: 120; top: calc(100% + 6px); left: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  max-width: min(320px, 90vw); padding: 6px 9px; border-radius: 11px;
+  border: 1px solid var(--border); background: var(--popover); color: var(--muted-foreground);
+  box-shadow: var(--shadow-md); font-size: 11px; line-height: 1.35;
+}
+.command-time-preview strong, .qc-natural-preview strong {
+  display: inline-block; padding: 2px 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 13%, transparent); color: var(--primary);
+  font-weight: 700; overflow-wrap: anywhere;
+}
+.qc-natural-preview {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 2px 2px 7px; color: var(--muted-foreground); font-size: 11px;
+}
+
+/* 焦点视图为单列悬浮卡片；窄窗口中的标题和气泡在卡片内部换行。 */
+.focus-card-grid { grid-template-columns: minmax(0, 1fr) !important; }
+.focus-task-card { min-width: 0; }
+.focus-task-card { max-height: 128px; overflow: hidden; }
+.focus-task-card:has(.task-detail-panel) { max-height: 420px; }
+@media (hover: hover) and (pointer: fine) {
+  .focus-task-card:hover { max-height: 420px; transform: translateY(-2px) scale(1.006); box-shadow: 0 18px 38px color-mix(in srgb, var(--foreground) 16%, transparent), 0 5px 12px color-mix(in srgb, var(--foreground) 7%, transparent) !important; }
+  .focus-task-card:hover .focus-card-parent { opacity: 1; max-height: 48px; margin-bottom: 5px !important; padding-top: 3px !important; padding-bottom: 3px !important; }
+}
+.focus-card-parent { opacity: 0; max-height: 0; overflow: hidden; margin-top: 0 !important; margin-bottom: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; transition: opacity 160ms ease, max-height 220ms ease, margin 220ms ease, padding 220ms ease; }
+.focus-task-card:has(.task-detail-panel) .focus-card-parent { opacity: 1; max-height: 48px; margin-bottom: 5px !important; padding-top: 3px !important; padding-bottom: 3px !important; }
+@media (max-width: 640px) {
+  .focus-task-card, .focus-task-card:hover { box-shadow: none !important; transform: none !important; }
+}
+.focus-task-card { box-sizing: border-box; width: 100%; overflow-wrap: anywhere; }
+.focus-task-card .task-date-badges { min-width: 0; padding-left: 0 !important; }
+.focus-task-card .task-start-badge,
+.focus-task-card .task-deadline-badge { max-width: 100%; min-width: 0; flex-wrap: wrap; white-space: normal; overflow-wrap: anywhere; }
+.focus-task-card .task-detail-panel { min-width: 0; margin-left: 0 !important; overflow-wrap: anywhere; }
+.focus-task-card.is-repeated .task-date-badges:not(.focus-repeat-only) { display: none !important; }
+.focus-task-card.is-mobile,
+.focus-task-card.is-mobile:hover,
+.focus-task-card.is-mobile:has(.task-detail-panel),
+.focus-task-card.is-expanded,
+.focus-task-card.is-expanded:hover { max-height: none; }
 
 .mobile-bottom-nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 80;
@@ -624,6 +666,8 @@ input.pw-mask {
 .mobile-task-check::before { content: ''; width: 20px; height: 20px; border: 1.6px solid var(--muted-foreground); border-radius: 50%; }
 .mobile-task-check.is-important::before { border-color: #ff6b3d; }
 .mobile-task-check.is-complete::before { border-color: var(--primary); background: var(--primary); }
+.mobile-task-check.is-repeated::before { border-color: #2da04e; }
+.mobile-task-check.is-repeated.is-complete::before { background: #2da04e; }
 .mobile-task-check.is-complete { position: relative; background: transparent; color: var(--primary-foreground); }
 .mobile-task-check.is-complete span { position: absolute; inset: 14px; display: inline-flex; align-items: center; justify-content: center; }
 .mobile-task-check svg { width: 16px; height: 16px; }

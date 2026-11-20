@@ -13,7 +13,7 @@
 
 import { TaskRepeatRule } from '../../data/types';
 import { ReminderOffsetKey } from '../../data/reminderOffsets';
-import { parseNaturalDateTime } from './formatDate';
+import { parseNaturalDateTime, stripNaturalDateTime } from './formatDate';
 
 export type ParsedCommand =
   | { kind: 'create-folder'; folderName: string }
@@ -39,21 +39,7 @@ function extractTaskKeyword(text: string): string {
   let s = text;
   // 新建/创建/添加 前缀（含"新建任务：""新建一个"等）
   s = s.replace(/^(?:新建|创建|添加)(?:一个|一个新)?(?:任务)?\s*[:：]?\s*/, '');
-  // 相对日期
-  s = s.replace(/今天|今日|明天|明日|后天|大后天|月底/g, '');
-  // 周X / 下周X / 星期X / 礼拜X
-  s = s.replace(/(?:下个?周|周|星期|礼拜)\s*[一二三四五六日天]/g, '');
-  // 具体日期：x月x日/x月x号/x年x月x日
-  s = s.replace(/[0-9一二两三四五六七八九十]{1,2}\s*月\s*[0-9一二两三四五六七八九十]{1,2}\s*(?:日|号|天)?/g, '');
-  s = s.replace(/\d{4}\s*年/g, '');
-  // 时间段（长词优先，避免误剥单字"早/晚"）
-  s = s.replace(/早晨|清晨|早上|上午|下午|晚上|傍晚|凌晨|中午|晚间|夜晚/g, '');
-  // 阿拉伯数字的 X点(Y分) / X:Y
-  s = s.replace(/\d{1,2}\s*[点时:：]\s*(\d{1,2})?\s*分?/g, '');
-  // 中文数字的 X点(Y分)
-  s = s.replace(/[一二两三四五六七八九十]{1,3}\s*[点时:：]\s*([一二两三四五六七八九十]{1,2})?\s*分?/g, '');
-  // X小时后 / X小时 之后
-  s = s.replace(/\d{1,2}|[一二两三四五六七八九十]{1,2}\s*(?:个)?小时(?:以)?后/g, '');
+  s = stripNaturalDateTime(s);
   // 前后多余的"的"与空白
   s = s.replace(/^的+|\的+$/g, '').trim();
   return s;
@@ -99,9 +85,14 @@ function parseRepeatRule(text: string): { rule: TaskRepeatRule; intervalDays: nu
   if (/每月|每个月/.test(text)) return { rule: 'monthly', intervalDays: null };
   if (/每年|每一年/.test(text)) return { rule: 'yearly', intervalDays: null };
   // 自定义：每N天 / 每隔N天
-  const m = text.match(/每(?:隔)?\s*(\d+)\s*天/);
+  const m = text.match(/每(?:隔)?\s*(\d+|[一二两三四五六七八九十]{1,3})\s*天/);
   if (m) {
-    const n = Math.max(1, parseInt(m[1], 10));
+    const cn: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+    const n = /^\d+$/.test(m[1]) ? parseInt(m[1], 10) : (m[1].length === 2 && m[1].startsWith('十')
+      ? 10 + (cn[m[1][1]] ?? 0)
+      : m[1].length === 2 && m[1].endsWith('十') ? (cn[m[1][0]] ?? 0) * 10
+        : m[1].length === 3 && m[1][1] === '十' ? (cn[m[1][0]] ?? 0) * 10 + (cn[m[1][2]] ?? 0)
+          : (cn[m[1]] ?? 0));
     return { rule: 'custom', intervalDays: n };
   }
   return null;

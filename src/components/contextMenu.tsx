@@ -302,6 +302,8 @@ function DeferMenuItem({ taskId, onDeferTask, onClose, itemBase, iconStyle, labe
 }) {
   const [open, setOpen] = useState(false);
   const options: { target: DeferTarget; label: string }[] = [
+    { target: 'plus3Hours', label: '延后三小时' },
+    { target: 'plus7Hours', label: '延后七小时' },
     { target: 'tonight', label: '今晚' },
     { target: 'tomorrow', label: '明天' },
     { target: 'nextWorkday', label: '下个工作日' },

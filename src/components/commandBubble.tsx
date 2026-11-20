@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { isMobile } from '../data/platform';
+import { parseCommand } from './utils/commandParser';
+import { formatDeadline } from './utils/formatDate';
 
 interface CommandBubbleProps {
   /** 提交命令文本（由调用方解析并执行） */
@@ -12,6 +14,9 @@ interface CommandBubbleProps {
 export default function CommandBubble({ onCommand, focusSignal }: CommandBubbleProps) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const parsed = value.trim() ? parseCommand(value) : null;
+  const preview = parsed?.kind === 'create-task' && parsed.deadline !== null && parsed.title
+    ? parsed.deadline : null;
 
   // 外部信号变化 → 聚焦命令输入框（小部件"快速记录"唤起时）
   useEffect(() => {
@@ -28,7 +33,7 @@ export default function CommandBubble({ onCommand, focusSignal }: CommandBubbleP
   };
 
   return (
-    <div style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }}>
+    <div style={{ position: 'relative', flex: '1 1 auto', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0 }}>
       <input
         ref={inputRef}
         type="text"
@@ -59,6 +64,12 @@ export default function CommandBubble({ onCommand, focusSignal }: CommandBubbleP
           transition: 'border-color 0.15s ease',
         }}
       />
+      {preview !== null && (
+        <div role="status" aria-live="polite" className="command-time-preview">
+          <span>识别到截止时间</span>
+          <strong>{formatDeadline(preview)}</strong>
+        </div>
+      )}
     </div>
   );
 }

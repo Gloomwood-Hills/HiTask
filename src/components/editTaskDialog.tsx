@@ -13,9 +13,6 @@ interface EditTaskDialogProps {
   task: Task;
   onSave: (updates: Partial<Pick<Task, 'title' | 'remark' | 'deadline' | 'priority' | 'reminderAt' | 'reminderOffsets' | 'repeatRule' | 'repeatIntervalDays'>>) => Promise<void>;
   onClose: () => void;
-  /** 截止时间仅填日期时补上的默认时/分（设置 → 默认截止时刻） */
-  defaultDeadlineHour?: number;
-  defaultDeadlineMinute?: number;
 }
 
 /** 截止时间快捷项：一小时后为具体时刻，其余为日期（选择时按默认截止时刻补全） */
@@ -36,7 +33,11 @@ function reminderLabel(offsets: string[], customAt: number | null): string {
 }
 
 /** 任务编辑弹窗：标题 / 备注 / 截止与提醒时间 / 重要（编辑任务，与新建弹窗时间视图保持一致） */
-export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineHour = 18, defaultDeadlineMinute = 0 }: EditTaskDialogProps) {
+export default function EditTaskDialog({ task, onSave, onClose }: EditTaskDialogProps) {
+  const openedAt = useState(() => Date.now())[0];
+  const openedAtDate = new Date(openedAt);
+  const defaultDeadlineHour = openedAtDate.getHours();
+  const defaultDeadlineMinute = openedAtDate.getMinutes();
   const [title, setTitle] = useState(task.title);
   const [remark, setRemark] = useState(task.remark);
   const [important, setImportant] = useState(task.priority === 'important');
@@ -100,6 +101,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
       priority: important ? 'important' : 'normal',
       deadline: effectiveDeadline,
       reminderOffsets: custom ? [] : sanitizeOffsets(reminderOffsets),
+      // 未填写截止时间时由 TaskService 以保存时刻建立重复基准。
       repeatRule,
       repeatIntervalDays: repeatRule === 'custom' ? repeatIntervalDays : null,
     };
@@ -268,6 +270,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
                 <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>自定义时间</div>
                 <input
                   type="datetime-local"
+                  lang="en-GB"
                   value={manualDeadline !== null ? toLocalInputValue(manualDeadline) : ''}
                   onChange={(e) => { if (e.target.value) setManualDeadline(new Date(e.target.value).getTime()); }}
                   style={{
@@ -386,7 +389,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
           )
         )}
 
-        {/* 重复规则（需先有截止时间） */}
+        {/* 重复规则（无截止时间时以设置时刻为基准） */}
         <div style={{ padding: `${s.padTop}px ${s.padX}px 0` }}>
           <div style={{ fontSize: compact ? 11 : 12, color: 'var(--muted-foreground)', marginBottom: 6 }}>重复</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -425,7 +428,7 @@ export default function EditTaskDialog({ task, onSave, onClose, defaultDeadlineH
             )}
           </div>
           {repeatRule && !effectiveDeadline && (
-            <div style={{ fontSize: 11, color: 'var(--destructive)', marginTop: 6 }}>设置重复前请先选择截止时间（重复按截止日顺延）</div>
+            <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 6 }}>未设置截止时间，将以当前设置时刻作为重复基准</div>
           )}
         </div>
 

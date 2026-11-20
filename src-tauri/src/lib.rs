@@ -1,4 +1,6 @@
 use tauri::{Emitter, Manager};
+#[cfg(not(target_os = "android"))]
+use tauri_plugin_notification::NotificationExt;
 
 // Windows 的便携版没有 MSIX 包身份。通知库会使用应用 ID 发送 toast，但必须先把
 // 此 ID 写入当前用户的 AppUserModelId 注册表项，系统设置才能将通知归属到本应用。
@@ -57,6 +59,25 @@ fn exit_app(app: tauri::AppHandle) {
 #[tauri::command]
 fn ensure_notification_identity() -> Result<(), String> {
     notification_identity::ensure_registered()
+}
+
+/// 由原生通知插件同步确认发送结果；前端仅在成功后标记任务已提醒。
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn send_desktop_notification(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    notification_identity::ensure_registered()?;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn send_desktop_notification(_title: String, _body: String) -> Result<(), String> {
+    Err("桌面通知仅在电脑端可用".to_string())
 }
 
 /// 在主窗口外显示仍由前端样式绘制的任务右键菜单。
@@ -288,6 +309,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             exit_app,
             ensure_notification_identity,
+            send_desktop_notification,
             open_context_menu_popup,
             webdav::webdav_fetch,
             webdav::webdav_put,

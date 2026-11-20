@@ -19,6 +19,10 @@ interface TaskItemProps {
   deadlineGradient?: boolean;
   /** 深色模式：渐变远端颜色为白色；浅色模式为黑色 */
   dark?: boolean;
+  /** 焦点重复卡片仅显示累计次数，不显示截止时间。 */
+  focusRepeatOnly?: boolean;
+  /** 焦点卡片悬停时自动显示详情面板。 */
+  focusHoverDetails?: boolean;
 }
 
 
@@ -106,30 +110,33 @@ const REPEAT_RULE_LABEL: Record<string, string> = {
 
 /** 重复系列聚类徽章：显示重复规则（如"每天"）+ 累计完成次数，使列表视图中重复任务一目了然 */
 function RepeatBadge({ rule, intervalDays, count }: { rule: string | null; intervalDays: number | null; count: number }) {
-  const label = rule === 'custom' ? `每${intervalDays ?? 1}天` : (rule ? REPEAT_RULE_LABEL[rule] : '');
-  if (!label) return null;
+  const label = rule === 'custom' ? `每${intervalDays ?? 1}天` : (rule ? REPEAT_RULE_LABEL[rule] : '重复');
   return (
-    <span style={{
+    <span className="task-repeat-badge" style={{
       display: 'inline-flex', alignItems: 'center', flexShrink: 0, gap: 4,
       padding: '2px 8px', borderRadius: 999,
-      background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
-      color: 'var(--primary)', fontSize: 11, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
+      background: 'color-mix(in srgb, #2da04e 15%, transparent)',
+      color: 'color-mix(in srgb, #2da04e 78%, var(--foreground))', fontSize: 11, fontWeight: 650, lineHeight: 1.4, whiteSpace: 'nowrap',
     }}>
       {label}
-      {count > 0 && <span style={{ opacity: 0.7 }}>·{count}次</span>}
+      <span style={{ opacity: 0.82 }}>· {count}次</span>
     </span>
   );
 }
 
 /** 日期徽章（开始 + 截止，含颜色渐变提醒）；已过期/累计完成次数标签与截止时间同一行 */
 function DateBadge({
-  task, deadlineGradient = true, dark = false, compact = false,
+  task, deadlineGradient = true, dark = false, compact = false, focusRepeatOnly = false,
 }: {
   task: Task & { repeatCount?: number };
   deadlineGradient?: boolean;
   dark?: boolean;
   compact?: boolean;
+  focusRepeatOnly?: boolean;
 }) {
+  if (focusRepeatOnly) {
+    return <div className="task-date-badges focus-repeat-only" style={{ paddingLeft: 14 }}><RepeatBadge rule={task.repeatRule} intervalDays={task.repeatIntervalDays} count={task.repeatCount ?? 0} /></div>;
+  }
   const effectiveDeadline = getEffectiveDeadline(task as TaskWithSubtasks);
   const showStart = task.startDate !== null;
   const showDeadline = effectiveDeadline !== null;
@@ -143,9 +150,9 @@ function DateBadge({
   const deadlineStyle = effectiveDeadline !== null ? deadlineColor(effectiveDeadline, deadlineGradient, dark) : null;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: compact ? 0 : 14, flexWrap: 'wrap' }}>
+    <div className="task-date-badges" style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: compact ? 0 : 14, flexWrap: 'wrap' }}>
       {showStart && (
-        <span style={{
+        <span className="task-start-badge" style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
           padding: '2px 8px', borderRadius: 999, fontSize: 11, lineHeight: 1.4,
           background: 'color-mix(in srgb, var(--border) 25%, transparent)',
@@ -156,7 +163,7 @@ function DateBadge({
         </span>
       )}
       {showDeadline && deadlineStyle && (
-        <span style={{
+        <span className="task-deadline-badge" style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
           padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600, lineHeight: 1.4,
           background: deadlineStyle.bg, color: deadlineStyle.color,
@@ -221,8 +228,8 @@ function SubtaskRow({
           onClick={() => onToggleCompleted(task.id)}
           style={{
             width: 15, height: 15, borderRadius: '50%',
-            background: task.completed ? 'var(--primary)' : 'transparent',
-            border: task.completed ? 'none' : '1.5px solid var(--muted-foreground)',
+            background: task.completed ? (task.repeatSeriesId !== null ? '#2da04e' : 'var(--primary)') : 'transparent',
+            border: task.completed ? 'none' : `1.5px solid ${task.repeatSeriesId !== null ? '#2da04e' : 'var(--muted-foreground)'}`,
             flexShrink: 0,
             display: 'inline-flex',
             alignItems: 'center',
@@ -348,17 +355,20 @@ function SubtaskList({
  * 点击任务行展开详情（备注、时间信息）；子任务列表独立展开
  */
 export default function TaskItem({
-  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient = true, dark = false,
+  task, expandedSet, onToggleExpanded, onToggleCompleted, onContextMenu, searchQuery, deadlineGradient = true, dark = false, focusRepeatOnly = false, focusHoverDetails = false,
 }: TaskItemProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [hovering, setHovering] = useState(false);
   const expanded = expandedSet.has(task.id);
   const hasChildren = task.subtasks.length > 0;
   const previewSubtask = !expanded ? closestDeadlineSubtask(task.subtasks) : null;
   // 创建时间对所有任务都有意义，因此详情入口始终显示，即使没有备注和截止日期。
   const hasDetails = true;
+  const detailsVisible = detailsOpen || (focusHoverDetails && hovering);
+  const checkAccent = task.repeatSeriesId !== null ? '#2da04e' : task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)';
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative' }} onMouseEnter={() => focusHoverDetails && setHovering(true)} onMouseLeave={() => focusHoverDetails && setHovering(false)}>
       {/* 横向分支线 */}
       <div style={{
         position: 'absolute', left: -14, top: 18, width: 14, height: 1,
@@ -389,24 +399,24 @@ export default function TaskItem({
           onClick={(e) => { e.stopPropagation(); onToggleCompleted(task.id); }}
           onMouseOver={(e) => {
             if (!task.completed) {
-              e.currentTarget.style.borderColor = 'var(--primary)';
-              e.currentTarget.style.background = 'color-mix(in srgb, var(--primary) 10%, transparent)';
+              e.currentTarget.style.borderColor = task.repeatSeriesId !== null ? '#2da04e' : 'var(--primary)';
+              e.currentTarget.style.background = task.repeatSeriesId !== null ? 'color-mix(in srgb, #2da04e 12%, transparent)' : 'color-mix(in srgb, var(--primary) 10%, transparent)';
             }
           }}
           onMouseOut={(e) => {
             if (!task.completed) {
-              e.currentTarget.style.borderColor = task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)';
-              e.currentTarget.style.background = task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent';
+              e.currentTarget.style.borderColor = checkAccent;
+              e.currentTarget.style.background = task.repeatSeriesId !== null ? 'color-mix(in srgb, #2da04e 10%, transparent)' : task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent';
             }
           }}
           style={{
             width: 18, height: 18, borderRadius: '50%',
             border: task.completed
               ? 'none'
-              : `1.5px solid ${task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)'}`,
+              : `1.5px solid ${checkAccent}`,
             background: task.completed
-              ? 'var(--primary)'
-              : task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent',
+              ? (task.repeatSeriesId !== null ? '#2da04e' : 'var(--primary)')
+              : task.repeatSeriesId !== null ? 'color-mix(in srgb, #2da04e 10%, transparent)' : task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent',
             flexShrink: 0,
             display: 'inline-flex',
             alignItems: 'center',
@@ -433,6 +443,7 @@ export default function TaskItem({
           {/* 标题行 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
             <span
+              className="task-item-title"
               style={{
                 fontSize: 13.5,
                 fontWeight: 600,
@@ -479,12 +490,12 @@ export default function TaskItem({
           </div>
 
           {/* 日期徽章 */}
-          <DateBadge task={task} deadlineGradient={deadlineGradient} dark={dark} />
+          <DateBadge task={task} deadlineGradient={deadlineGradient} dark={dark} focusRepeatOnly={focusRepeatOnly} />
         </div>
       </div>
 
       {/* 详情面板（备注 + 时间信息） */}
-      {hasDetails && detailsOpen && (
+      {hasDetails && detailsVisible && (
         <div className="task-detail-panel" style={{
           margin: '2px 8px 6px 36px',
           padding: '10px 12px',
@@ -507,7 +518,7 @@ export default function TaskItem({
               value={formatStartDate(task.startDate)}
             />
           )}
-          {getEffectiveDeadline(task) !== null && (
+          {getEffectiveDeadline(task) !== null && !focusRepeatOnly && (
             <DetailRow
               icon={<Clock style={{ width: 12, height: 12, color: 'var(--muted-foreground)', flexShrink: 0 }} />}
               label="截止"

@@ -47,26 +47,28 @@ https://github.com/user-attachments/assets/bef0337b-2def-4e68-9d86-688ab0db2d02
 
 ### Windows
 
-从 [v2.0.0 Release](https://github.com/Gloomwood-Hills/Desktop-Task-Manager/releases/tag/v2.0.0) 下载 `DesktopTaskManager-v2.0.0.exe`（便携版）或安装包。
+从 [v2.0.0 Release](https://github.com/Gloomwood-Hills/HiTask/releases/tag/v2.0.0) 下载 `HiTask-v2.0.0.exe`（便携版）或安装包。
 
 ### Android
 
-下载 `DesktopTaskManager-arm64-release.apk` 安装；随后在桌面添加“HiTask”小部件。
+下载 `HiTask-arm64-release.apk` 安装；随后在桌面添加“HiTask”小部件。
 
 ## 开发
 
-环境要求：Node.js 18+、Rust stable；Android 构建另需 JDK 21、Android SDK 与 NDK。
+使用 Node.js 24 LTS 和随附的 npm。Windows 桌面端还需要 Rust stable（MSVC 工具链）、Visual Studio Build Tools 的「使用 C++ 的桌面开发」工作负载，以及 WebView2 Runtime。
 
-```bash
-npm install
+```powershell
+git clone --branch V2.0.0 https://github.com/Gloomwood-Hills/HiTask.git
+cd HiTask
+npm ci
+npm test          # 单元测试
 npm run dev       # Vite 开发服务器
 npm run tauri dev # Tauri 桌面调试
 npm run build     # 前端生产构建
 npm run release   # Windows 发布构建
-npm test          # 单元测试
 ```
 
-Android 小部件工程位于 `src-tauri/gen/android/`，使用 Gradle 构建 arm64 release APK。
+首次安装需要联网下载 npm、Rust 和 Gradle 的依赖。`package-lock.json` 和 `src-tauri/Cargo.lock` 记录了依赖版本。Android 环境配置和 APK 构建步骤见[技术文档](TECHNICAL.md#9-构建与发布)。
 
 ## 技术栈
 

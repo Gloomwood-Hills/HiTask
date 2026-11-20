@@ -7,6 +7,7 @@ import { WindowStateService } from '../services/WindowStateService';
 import { buildFolderTree, buildTaskTree, sortTasksByType, sortFolders } from '../data/utils';
 import { Folder, Task, TaskWithSubtasks, FolderNode, Theme, Priority, Settings, WindowState, TaskRepeatRule } from '../data/types';
 import { notifyDataChanged } from '../data/sync';
+import { subscribeSyncDataApplied } from '../data/sync/dataEvents';
 
 export interface UseTaskData {
   folderTree: FolderNode[];
@@ -139,6 +140,8 @@ export function useTaskData(): UseTaskData {
     notifyDataChanged();
   };
 
+  useEffect(() => subscribeSyncDataApplied(() => { void refresh(); }), [refresh]);
+
   /** 过滤文件夹根级已完成任务，保留子任务结构 */
   function cleanFolderRoot(node: FolderNode): FolderNode {
     return {
@@ -184,7 +187,9 @@ export function useTaskData(): UseTaskData {
    * 否则 React 内存态停留在旧数据（表现为"小部件完成/撤销/新建不同步到应用"）。 */
   useEffect(() => {
     const onVisibility = () => {
-      if (!document.hidden) void refresh();
+      if (!document.hidden) {
+        void refresh();
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);

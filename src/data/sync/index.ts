@@ -18,7 +18,7 @@ export {
   getDeviceId,
 } from './engine';
 export type { SyncResult, SyncProbe } from './engine';
-export { configureAutoSync, startAutoSync, stopAutoSync, notifyDataChanged } from './scheduler';
+export { configureAutoSync, startAutoSync, stopAutoSync, notifyDataChanged, requestSyncNow } from './scheduler';
 export { logSync, getSyncLogs, clearSyncLogs, exportSyncLogsText } from './syncLog';
 export type { SyncLogEntry, SyncLogLevel } from './syncLog';
 export { getSyncUiState, setSyncUiState, subscribeSyncUiState } from './status';

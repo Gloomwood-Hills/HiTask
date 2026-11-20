@@ -13,6 +13,15 @@ export interface DueReminder {
   reminderTime: number | null;
 }
 
+const DEADLINE_REMINDER_KEY = 'deadline';
+
+function needsSeparateDeadlineReminder(task: Task): boolean {
+  if (task.deadline == null) return false;
+  const hasOffsets = (task.reminderOffsets?.length ?? 0) > 0;
+  const hasTimes = (task.reminderTimes?.length ?? 0) > 0;
+  return (hasOffsets || hasTimes) && !task.reminderTimes?.includes(task.deadline);
+}
+
 export class TaskService {
   private taskRepository: TaskRepository;
 
@@ -52,7 +61,8 @@ export class TaskService {
     }
   ): Promise<Task> {
     const id = generateId();
-    const deadline = options?.deadline ?? null;
+    // 未填写截止时间的重复任务，以创建/设置重复规则的时刻作为系列基准。
+    const deadline = options?.deadline ?? (options?.repeatRule ? Date.now() : null);
     // 多选绝对提醒时刻（无需截止时间即可设置）：一旦设置则互斥清空单值 reminderAt 与提前偏移
     const reminderTimes = sanitizeTimes(options?.reminderTimes);
     const useMulti = reminderTimes.length > 0;
@@ -69,7 +79,7 @@ export class TaskService {
       startDate: null,
       deadline,
       priority: options?.priority || 'normal',
-      reminderAt: explicitReminderAt ?? deriveReminderAt(deadline, reminderOffsets),
+      reminderAt: useMulti ? null : (explicitReminderAt ?? deriveReminderAt(deadline, reminderOffsets)),
       reminderOffsets,
       reminderFiredOffsets: [],
       reminderTimes,
@@ -90,6 +100,9 @@ export class TaskService {
       if (current && patch.repeatRule && !current.repeatSeriesId) {
         patch.repeatSeriesId = id;
       }
+      if (current && patch.repeatRule && patch.deadline === undefined && current.deadline == null) {
+        patch.deadline = Date.now();
+      }
     }
     // 截止时间 / 偏移 / 单值 / 多选提醒变化时，重置已触发标记并处理各提醒来源的互斥（提醒配置变更，旧通知作废、重新武装）
     const deadlineChanged = 'deadline' in patch;
@@ -101,20 +114,20 @@ export class TaskService {
       if (current) {
         const deadline = patch.deadline !== undefined ? patch.deadline : current.deadline;
         const offsets = offsetsChanged ? sanitizeOffsets(patch.reminderOffsets) : (current.reminderOffsets ?? []);
-        if (timesChanged) {
+        const times = timesChanged ? sanitizeTimes(patch.reminderTimes) : (current.reminderTimes ?? []);
+        if (timesChanged && times.length > 0) {
           // 多选绝对提醒时刻显式设置：互斥清空单值 reminderAt 与提前偏移
-          const times = sanitizeTimes(patch.reminderTimes);
           patch.reminderTimes = times;
-          patch.reminderAt = times.length ? null : (patch.reminderAt ?? null);
-          if (times.length) patch.reminderOffsets = [];
-        } else if (reminderAtChanged) {
+          patch.reminderAt = null;
+          patch.reminderOffsets = [];
+        } else if (reminderAtChanged && patch.reminderAt != null) {
           // 单值绝对提醒时刻显式设置：互斥清空多选与提前偏移
-          patch.reminderAt = patch.reminderAt ?? null;
-          if (patch.reminderAt != null) { patch.reminderOffsets = []; patch.reminderTimes = []; }
+          patch.reminderOffsets = [];
+          patch.reminderTimes = [];
         } else {
           // 未显式设置任何绝对提醒：任务若未用多选提醒，则按「截止 + 提前偏移」派生单值兜底
-          const currentTimes = current.reminderTimes ?? [];
-          if (currentTimes.length === 0) {
+          if (timesChanged) patch.reminderTimes = [];
+          if (times.length === 0) {
             patch.reminderAt = deriveReminderAt(deadline, offsets);
           }
         }
@@ -330,12 +343,18 @@ export class TaskService {
             due.push({ task: t, offsetKey: item.key, reminderTime: null });
           }
         }
+        if (t.deadline <= now && !fired.has(DEADLINE_REMINDER_KEY)) {
+          due.push({ task: t, offsetKey: DEADLINE_REMINDER_KEY, reminderTime: null });
+        }
       } else if (hasTimes) {
         const fired = new Set(t.reminderFiredTimes ?? []);
         for (const tm of t.reminderTimes) {
           if (tm <= now && !fired.has(tm)) {
             due.push({ task: t, offsetKey: null, reminderTime: tm });
           }
+        }
+        if (needsSeparateDeadlineReminder(t) && t.deadline! <= now && !(t.reminderFiredOffsets ?? []).includes(DEADLINE_REMINDER_KEY)) {
+          due.push({ task: t, offsetKey: DEADLINE_REMINDER_KEY, reminderTime: null });
         }
       } else if (t.reminderAt != null && t.reminderAt <= now) {
         due.push({ task: t, offsetKey: null, reminderTime: null });
@@ -362,7 +381,9 @@ export class TaskService {
     const offsets = task.reminderOffsets ?? [];
     const fired = new Set(task.reminderFiredOffsets ?? []);
     fired.add(offsetKey);
-    const allFired = offsets.filter(isReminderOffsetKey).every((k) => fired.has(k));
+    const allFired = offsets.filter(isReminderOffsetKey).every((k) => fired.has(k))
+      && (task.reminderTimes ?? []).every((tm) => (task.reminderFiredTimes ?? []).includes(tm))
+      && (!needsSeparateDeadlineReminder(task) || fired.has(DEADLINE_REMINDER_KEY));
     const patch: Partial<Task> = { reminderFiredOffsets: [...fired] };
     if (allFired) patch.reminderFired = true;
     await this.taskRepository.update(id, patch);
@@ -376,7 +397,8 @@ export class TaskService {
     const times = [...(task.reminderTimes ?? [])];
     const fired = new Set(task.reminderFiredTimes ?? []);
     fired.add(reminderTime);
-    const allFired = times.every((tm) => fired.has(tm));
+    const allFired = times.every((tm) => fired.has(tm))
+      && (!needsSeparateDeadlineReminder(task) || (task.reminderFiredOffsets ?? []).includes(DEADLINE_REMINDER_KEY));
     const patch: Partial<Task> = { reminderFiredTimes: [...fired] };
     if (allFired) patch.reminderFired = true;
     await this.taskRepository.update(id, patch);

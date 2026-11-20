@@ -81,6 +81,16 @@ function ensureMobileNotificationChannel(): Promise<void> {
   return mobileNotificationChannelReady;
 }
 
+/** 桌面端等待原生通知调用返回；移动端继续使用已配置的通知通道。 */
+async function deliverNotification(notification: { title: string; body: string }): Promise<void> {
+  if (!isMobile) {
+    await invoke('send_desktop_notification', notification);
+    return;
+  }
+  await ensureMobileNotificationChannel();
+  sendNotification({ ...notification, channelId: MOBILE_NOTIFICATION_CHANNEL_ID });
+}
+
 function App() {
   const {
     folderTree, unclassifiedTasks, completedTasks, allFolders, theme, settings, windowState, loading, error,
@@ -104,6 +114,8 @@ function App() {
   const [prefillDate, setPrefillDate] = useState<number | null>(null);
   const [lastAction, setLastAction] = useState<LastAction>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /** Windows 提醒在应用内保持显示，直到用户点击关闭；系统 Toast 仍同步发送。 */
+  const [persistentReminder, setPersistentReminder] = useState<{ title: string; body: string } | null>(null);
   /** 命令框聚焦信号：小部件「快速记录」唤起主视图时自动聚焦命令栏 */
   const [commandFocusSignal, setCommandFocusSignal] = useState(0);
   /** AI 已解析好的「新建任务」草稿：弹出 QuickCapture 并预填（仅 create_task） */
@@ -323,8 +335,6 @@ function App() {
     if (!task) return;
     const nextDeadline = deferredDeadline(
       target,
-      settings?.defaultDeadlineHour ?? 18,
-      settings?.defaultDeadlineMinute ?? 0,
     );
     const reminderTimes = task.reminderTimes?.length
       ? shiftReminderTimes(task.reminderTimes, task.deadline, nextDeadline)
@@ -814,6 +824,9 @@ function App() {
   /** 从设置页由用户主动触发授权与测试，避免 Android/WebView 拒绝后台权限请求。 */
   const handleTestNotification = async (): Promise<{ ok: boolean; message: string }> => {
     try {
+      if (!settingsLatest.current?.reminderEnabled) {
+        return { ok: false, message: '系统通知已关闭；请先开启上方开关，再测试到点提醒' };
+      }
       // Windows 便携版也需要先注册稳定的通知发送者身份，否则系统会将 toast 归到
       // PowerShell 或不显示在“通知发送者”列表中。Android/iOS 上该命令是安全空操作。
       if (!isMobile) await invoke('ensure_notification_identity');
@@ -825,11 +838,9 @@ function App() {
       if (!granted) {
         return { ok: false, message: isMobile ? '通知权限未授予，请前往“系统设置 > 应用 > HiTask > 通知”开启后重试' : '系统通知权限未授予，请在系统设置中允许通知后重试' };
       }
-      await ensureMobileNotificationChannel();
-      sendNotification({
+      await deliverNotification({
         title: '任务提醒已开启',
         body: '这是一条测试通知；到点任务会以相同方式提醒。',
-        ...(isMobile ? { channelId: MOBILE_NOTIFICATION_CHANNEL_ID } : {}),
       });
       return {
         ok: true,
@@ -870,14 +881,11 @@ function App() {
           warn('提醒待授权：请在“设置 > 提醒”中授权并测试通知');
           return;
         }
-        await ensureMobileNotificationChannel();
         for (const item of due) {
           if (cancelled) return;
           try {
-            sendNotification({
-              ...buildReminderNotification(item.task),
-              ...(isMobile ? { channelId: MOBILE_NOTIFICATION_CHANNEL_ID } : {}),
-            });
+            await deliverNotification(buildReminderNotification(item.task));
+            if (!isMobile) setPersistentReminder(buildReminderNotification(item.task));
             // 仅当调用系统通知成功后才记为已触发；失败时保留任务，下一轮可重试。
             await svc.markReminderFired(item.task.id, item.offsetKey, item.reminderTime);
             if (settingsLatest.current?.autoPin && !isMobile) {
@@ -1104,9 +1112,6 @@ function App() {
   /** 解析并执行自然语言命令 */
   const handleCommand = async (raw: string) => {
     const cmd = parseCommand(raw);
-    const defaultHour = settings?.defaultDeadlineHour ?? 18;
-    const defaultMinute = settings?.defaultDeadlineMinute ?? 0;
-
     // 轻量本地命令：视图、搜索、展开和任务状态无需调用 AI，立即反馈。
     if (cmd.kind === 'open-view') {
       changeViewMode(cmd.view);
@@ -1197,13 +1202,12 @@ function App() {
     }
 
     if (cmd.kind === 'create-task') {
-      const deadline = applyDefaultDeadlineTime(cmd.deadline, defaultHour, defaultMinute);
-      // 有截止时间才允许重复规则与提前偏移（与快速新建弹窗逻辑一致）
+      const deadline = applyDefaultDeadlineTime(cmd.deadline);
       const hasDeadline = deadline != null;
       const task = await createTask(cmd.title, null, {
         deadline,
-        repeatRule: hasDeadline ? cmd.repeatRule : null,
-        repeatIntervalDays: hasDeadline && cmd.repeatRule === 'custom' ? cmd.repeatIntervalDays : null,
+        repeatRule: cmd.repeatRule,
+        repeatIntervalDays: cmd.repeatRule === 'custom' ? cmd.repeatIntervalDays : null,
         reminderOffsets: hasDeadline ? cmd.reminderOffsets : [],
         reminderAt: cmd.reminderAt,
       });
@@ -1219,7 +1223,7 @@ function App() {
         setToast('未找到匹配的任务，请尝试更精确的任务名');
         return;
       }
-      const newDeadline = applyDefaultDeadlineTime(cmd.newDeadline, defaultHour, defaultMinute);
+      const newDeadline = applyDefaultDeadlineTime(cmd.newDeadline);
       setCommandEdit({ task: matched, newDeadline });
       return;
     }
@@ -1228,6 +1232,7 @@ function App() {
       const matched = fuzzyFindTask(cmd.query);
       if (!matched) { setToast('未找到匹配的任务'); return; }
       await updateTask(matched.id, {
+        deadline: matched.deadline ?? Date.now(),
         repeatRule: cmd.repeatRule,
         repeatIntervalDays: cmd.repeatRule === 'custom' ? cmd.repeatIntervalDays : null,
       });
@@ -1927,8 +1932,6 @@ function App() {
             initialReminderTimes={editingTask ? editingTask.reminderTimes : undefined}
             initialSubtasks={editingTask ? editingSubtasks : aiCreateDraft?.subtasks}
             parentContext={editingParentContext}
-            defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
-            defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
             aiEnabled={aiEnabled}
             onGenerateSubtasks={async (title, deadline, opts) => {
               if (!aiConfig.apiKey || !aiConfig.model) throw new Error('请在 设置 → AI 中填写 API Key 与模型名');
@@ -1946,8 +1949,6 @@ function App() {
               await updateTask(aiEditDraft.taskId, updates);
             }}
             onClose={() => { setEditingTask(null); setAiEditDraft(null); }}
-            defaultDeadlineHour={settings?.defaultDeadlineHour ?? 18}
-            defaultDeadlineMinute={settings?.defaultDeadlineMinute ?? 0}
           />
         )}
       </AnimatePresence>
@@ -2024,6 +2025,30 @@ function App() {
         />
       )}
       {/* Undo Toast */}
+      <AnimatePresence>
+        {!isMobile && persistentReminder && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 24 }}
+            onClick={() => setPersistentReminder(null)}
+            aria-label="关闭任务提醒"
+            style={{
+              position: 'fixed', right: 18, bottom: 18, zIndex: 220,
+              width: 320, padding: '14px 16px', textAlign: 'left', cursor: 'pointer',
+              border: '1px solid color-mix(in srgb, var(--primary) 35%, var(--border))',
+              borderRadius: 14, background: 'var(--popover)', color: 'var(--foreground)',
+              boxShadow: 'var(--shadow-lg)', fontFamily: 'var(--font-sans)',
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>{persistentReminder.title}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted-foreground)', lineHeight: 1.45 }}>{persistentReminder.body}</div>
+            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--primary)' }}>点击关闭提醒</div>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {toast && (
           <motion.div

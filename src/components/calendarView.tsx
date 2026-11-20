@@ -302,15 +302,15 @@ function DetailRow({ task, onToggle, onContextMenu, parentTitle }: {
         aria-label={task.completed ? '撤销完成' : '标记完成'}
         onMouseEnter={(e) => {
           if (!task.completed) {
-            e.currentTarget.style.borderColor = 'var(--primary)';
-            e.currentTarget.style.background = 'color-mix(in srgb, var(--primary) 10%, transparent)';
+            e.currentTarget.style.borderColor = task.repeatSeriesId !== null ? '#2da04e' : 'var(--primary)';
+            e.currentTarget.style.background = task.repeatSeriesId !== null ? 'color-mix(in srgb, #2da04e 12%, transparent)' : 'color-mix(in srgb, var(--primary) 10%, transparent)';
           }
         }}
         onMouseLeave={(e) => {
           if (!task.completed) {
-            e.currentTarget.style.borderColor = task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)';
+            e.currentTarget.style.borderColor = task.repeatSeriesId !== null ? '#2da04e' : task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)';
             e.currentTarget.style.background =
-              task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent';
+              task.repeatSeriesId !== null ? 'color-mix(in srgb, #2da04e 10%, transparent)' : task.priority === 'important' ? 'color-mix(in srgb, #ff6b3d 10%, transparent)' : 'transparent';
           }
         }}
         style={{
@@ -318,13 +318,15 @@ function DetailRow({ task, onToggle, onContextMenu, parentTitle }: {
           width: 18,
           height: 18,
           borderRadius: '50%',
-          // 与列表视图（TaskItem 勾选圈）一致：完成=深蓝实心、无描边；未完成=描边圆（重要任务橙色、普通灰）
+          // 与列表视图一致：重复任务绿色优先，重要任务橙色，普通任务灰色。
           border: task.completed
             ? 'none'
-            : `1.5px solid ${task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)'}`,
+            : `1.5px solid ${task.repeatSeriesId !== null ? '#2da04e' : task.priority === 'important' ? '#ff6b3d' : 'var(--muted-foreground)'}`,
           background: task.completed
-            ? 'var(--primary)'
-            : task.priority === 'important'
+            ? (task.repeatSeriesId !== null ? '#2da04e' : 'var(--primary)')
+            : task.repeatSeriesId !== null
+              ? 'color-mix(in srgb, #2da04e 10%, transparent)'
+              : task.priority === 'important'
               ? 'color-mix(in srgb, #ff6b3d 10%, transparent)'
               : 'transparent',
           color: '#ffffff',

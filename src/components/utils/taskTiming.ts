@@ -1,23 +1,32 @@
 import { formatDeadline } from './formatDate';
 import { REMINDER_OFFSET_OPTIONS } from '../../data/reminderOffsets';
 
-export type DeferTarget = 'tonight' | 'tomorrow' | 'nextWorkday' | 'nextMonday';
+export type DeferTarget = 'plus3Hours' | 'plus7Hours' | 'tonight' | 'tomorrow' | 'nextWorkday' | 'nextMonday';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** 将任务延后到一个可预期的本地时刻；所有日期计算均用本地日历，避免 UTC 跨日。 */
 export function deferredDeadline(
   target: DeferTarget,
-  defaultHour: number,
-  defaultMinute: number,
-  now = new Date(),
+  defaultHourOrNow: number | Date = new Date(),
+  defaultMinute?: number,
+  compatibilityNow?: Date,
 ): number {
+  // 兼容旧调用签名 (target, hour, minute, now)；新调用只传 target，使用当前时分。
+  const legacy = typeof defaultHourOrNow === 'number';
+  const now = compatibilityNow ?? (defaultHourOrNow instanceof Date ? defaultHourOrNow : new Date());
+  const hour = legacy ? defaultHourOrNow : now.getHours();
+  const minute = legacy ? (defaultMinute ?? 0) : now.getMinutes();
   const next = new Date(now);
   next.setSeconds(0, 0);
 
+  if (target === 'plus3Hours' || target === 'plus7Hours') {
+    next.setHours(next.getHours() + (target === 'plus3Hours' ? 3 : 7), next.getMinutes(), 0, 0);
+    return next.getTime();
+  }
+
   if (target === 'tonight') {
-    next.setHours(defaultHour, defaultMinute, 0, 0);
-    // 默认时刻已过时，“今晚”仍指当天；用户可在编辑中精确调整。
+    next.setHours(hour, minute, 0, 0);
     return next.getTime();
   }
 
@@ -31,12 +40,12 @@ export function deferredDeadline(
     const daysUntilMonday = ((8 - next.getDay()) % 7) || 7;
     next.setDate(next.getDate() + daysUntilMonday);
   }
-  next.setHours(defaultHour, defaultMinute, 0, 0);
+  next.setHours(hour, minute, 0, 0);
   return next.getTime();
 }
 
 export function deferTargetLabel(target: DeferTarget): string {
-  return ({ tonight: '今晚', tomorrow: '明天', nextWorkday: '下个工作日', nextMonday: '下周一' })[target];
+  return ({ plus3Hours: '延后三小时', plus7Hours: '延后七小时', tonight: '今晚', tomorrow: '明天', nextWorkday: '下个工作日', nextMonday: '下周一' })[target];
 }
 
 /** 绝对提醒跟随任务平移；相对提醒不存绝对值，会由 TaskService 根据新截止自动派生。 */

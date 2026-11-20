@@ -49,7 +49,7 @@ function Row({ task, onRestore, onContextMenuTask, showBranch }: {
       )}
       <div style={{
         width: 18, height: 18, borderRadius: '50%',
-        background: 'var(--primary)',
+        background: task.repeatSeriesId !== null ? '#2da04e' : 'var(--primary)',
         border: 'none',
         flexShrink: 0,
         display: 'inline-flex',
@@ -186,7 +186,7 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
                   <div style={{ position: 'absolute', left: -14, top: 15, width: 14, height: 1, background: 'var(--border)', opacity: 0.35 }} />
                   <div style={{
                     width: 18, height: 18, borderRadius: '50%',
-                    background: 'var(--primary)', border: 'none',
+                    background: '#2da04e', border: 'none',
                     flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     color: '#ffffff',
                   }}>
@@ -202,8 +202,8 @@ export default function CompletedSection({ tasks, expanded, onToggleExpanded, on
                   <span style={{
                     flexShrink: 0, fontSize: 10.5, fontWeight: 600,
                     padding: '1px 6px', borderRadius: 7,
-                    background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
-                    color: 'var(--primary)',
+                    background: 'color-mix(in srgb, #2da04e 15%, transparent)',
+                    color: 'color-mix(in srgb, #2da04e 78%, var(--foreground))',
                   }}>
                     累计完成×{group.length}
                   </span>

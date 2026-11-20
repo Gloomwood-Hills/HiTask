@@ -49,9 +49,9 @@ export function offsetReminderTimes(deadline: number, offsets: string[]): { key:
     .sort((a, b) => a.time - b.time);
 }
 
-/** 派生 reminderAt：取最早的一个偏移提醒时刻；无偏移或未设截止返回 null */
+/** 派生 reminderAt：有自定义提前量时取最早提醒；否则默认在截止时提醒一次。 */
 export function deriveReminderAt(deadline: number | null, offsets: string[]): number | null {
   if (deadline == null) return null;
   const times = offsetReminderTimes(deadline, offsets);
-  return times.length ? times[0].time : null;
+  return times.length ? times[0].time : deadline;
 }
